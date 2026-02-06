@@ -1,0 +1,97 @@
+Car Rental Management System — Database Requirements
+
+	1.	Purpose
+The database shall support the core data needs of a car rental business by storing and enforcing consistent information about:
+• customers (including driving license information and optional national ID)
+• branches and vehicle inventory
+• reservations and rentals (pickup/return lifecycle)
+• payments for rentals
+• maintenance history of vehicles
+
+The database shall prevent invalid or inconsistent states where feasible through primary/foreign keys, check constraints, triggers, and stored procedures. Some complex business validations (e.g., temporal overlap checks) are treated as validation requirements and may be enforced via procedural validation and/or application-side checks, depending on platform scope and implementation.
+
+	2.	Scope
+In scope:
+• customer data management (license + optional national ID)
+• branch and vehicle inventory management (cars categorized by type/model and assigned to branches)
+• reservation recording and status tracking
+• rental recording (pickup/return) and final billing storage
+• payment recording (including multiple payments per rental)
+• maintenance recording and availability restriction rules as business validation
+
+Out of scope:
+• employees/roles/authorization
+• insurance/claims
+• discounts/loyalty programs
+• damage reports/penalties
+
+	3.	Conceptual Model and Relationships
+• A customer can create multiple reservations and rentals.
+• A car belongs to one branch, one car type, and one car model.
+• A car can have multiple reservations and rentals over time.
+• A reservation references exactly one customer and one car.
+• A reservation may result in at most one rental (0..1).
+• A rental references pickup and return branches.
+• A rental can have multiple payments.
+• A car can have multiple maintenance records.
+• A customer may have zero or one national ID record (business intent: at most one).
+
+	4.	Data Integrity Requirements
+4.1 Keys and Referential Integrity
+• Every entity shall have a primary key.
+• All foreign keys shall reference existing parent rows.
+• Deleting master data that is referenced by transactional data should be restricted to preserve history.
+
+4.2 Domain Validity Constraints
+• Monetary values (daily rate, total amount, payment amount, maintenance cost) must be >= 0.
+• Mileage values must be >= 0.
+• Date/time fields must be valid and consistent with the business rules below.
+
+	5.	Business Rules
+5.1 Reservation Rules
+• Reservation start date/time must be earlier than end date/time.
+• Reservations must reference existing customer and car records.
+• Overlapping reservations for the same car should be prevented for active reservations (time ranges must not intersect).
+Implementation note: In the current implementation, overlap prevention is treated as a validation requirement and is expected to be enforced via reservation-creation validation logic (e.g., stored procedure validation and/or application-side checks), rather than by a dedicated database trigger/constraint.
+
+5.2 Rental Rules
+• A rental represents actual vehicle usage and is linked to a reservation.
+• Rental customer and car must match the linked reservation’s customer and car (enforced via procedural logic and referential integrity).
+• A car must not have more than one active rental at the same time.
+Implementation note: This is enforced via database logic controlling rental lifecycle and car availability status.
+• While a rental is active, return date/time and end mileage may be NULL.
+• At return:
+• return date/time must be >= pickup date/time
+• end mileage must be >= start mileage
+• Pickup and return branches must reference valid branches.
+
+5.3 Availability Rules
+• A car that is currently rented should not be rented again until returned.
+Implementation note: Car availability is maintained by database logic that updates vehicle status during rental insert/close operations.
+• A car under maintenance should not be reservable or rentable.
+Implementation note: This is treated as a business validation rule (e.g., during reservation/rental creation) based on maintenance records and/or vehicle status fields, depending on implementation scope.
+• Reservation/rental creation should validate current car availability and conflicts according to the rules above.
+
+5.4 Billing Rules
+• Total rental amount shall be based on rental duration and the car’s daily rate.
+• Total amount may remain NULL until the return is recorded and billing is finalized.
+• The rounding policy for duration (e.g., round up to full days) must be applied consistently.
+
+5.5 Payment Rules
+• Each payment must reference an existing rental.
+• Successful payment amounts must be > 0.
+• Multiple payments per rental (partial payments) are allowed.
+• The sum of successful payments for a rental must not exceed the rental total amount.
+Implementation note: This is enforced by database logic (e.g., trigger/procedure checks) that prevents overpayment.
+
+5.6 Maintenance Rules
+• Each maintenance record must reference an existing car.
+• Maintenance cost must be >= 0.
+• Maintenance mileage must be non-negative and should not contradict vehicle mileage history.
+• Maintenance records provide maintenance history and can be used by availability validation logic.
+
+	6.	Assumptions and Implementation Notes
+• Each rental is associated with a reservation (consistent with the ERD). For walk-in rentals, a reservation record may be created at pickup time to maintain consistency.
+• Vehicle plate number is unique within the fleet (recommended as a uniqueness rule; may be enforced via a unique constraint depending on implementation).
+• Historical transactional data (rentals, payments, maintenance) should remain stored for auditing and reporting.
+• Not all complex temporal constraints are implemented as database constraints/triggers in both platforms; where direct enforcement is not implemented, the requirement is satisfied through procedural or application-side validation logic.
